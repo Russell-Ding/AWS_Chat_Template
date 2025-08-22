@@ -53,9 +53,9 @@
         <button id="new-conversation">New Conversation</button>
         <hr>
         <div id="conversations">
-            {% for conv_id in conversation_order %}
-                <div class="conversation" data-id="{{ conversations[conv_id].id }}">
-                    {{ conversations[conv_id].name }}
+            {% for conv in conversations %}
+                <div class="conversation" data-id="{{ conv.id }}">
+                    {{ conv.name }}
                 </div>
             {% endfor %}
         </div>
@@ -64,8 +64,9 @@
         <div id="chat-messages"></div>
         <div id="chat-input">
             <select id="model-select">
-                <option value="model1">Model 1 (AWS)</option>
-                <option value="model2">Model 2 (AWS)</option>
+                <option value="anthropic.claude-v2">Claude v2</option>
+                <option value="anthropic.claude-instant-v1">Claude Instant</option>
+                <option value="amazon.titan-text-express-v1">Titan Text</option>
             </select>
             <input type="text" id="message-input" placeholder="Type your message...">
             <button id="send-button">Send</button>
