@@ -45,25 +45,31 @@ def chat():
         # 2. Get conversation history and format it for the model.
         # Note: Prompt formatting can be model-specific. This is a generic example.
         conversation_history = db.get_conversation(conversation_id)["messages"]
-        prompt = ""
-        for msg in conversation_history:
-            role = "Human" if msg['role'] == 'user' else "Assistant"
-            prompt += f"\n\n{role}: {msg['content']}"
-        prompt += "\n\nAssistant:"
 
         # 3. Prepare the payload based on the model provider.
         if "anthropic" in model:
+            # Newer Anthropic models (like Claude 3) require the Messages API format.
+            # The conversation history from the DB is already in the correct format.
             body = json.dumps({
-                "prompt": prompt,
-                "max_tokens_to_sample": 500,
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 500,
+                "messages": conversation_history
             })
-        elif "amazon.titan" in model:
-            body = json.dumps({
-                "inputText": prompt,
-                "textGenerationConfig": {"maxTokenCount": 500}
-            })
-        else: # Fallback for other models, may need adjustment
-            body = json.dumps({"prompt": prompt})
+        else:
+            # Models like Titan use a text-based prompt format.
+            prompt = ""
+            for msg in conversation_history:
+                role = "Human" if msg['role'] == 'user' else "Assistant"
+                prompt += f"\n\n{role}: {msg['content']}"
+            prompt += "\n\nAssistant:"
+
+            if "amazon.titan" in model:
+                body = json.dumps({
+                    "inputText": prompt,
+                    "textGenerationConfig": {"maxTokenCount": 500}
+                })
+            else: # Fallback for other models, may need adjustment
+                body = json.dumps({"prompt": prompt})
 
         # 4. Invoke the model
         response = bedrock_runtime.invoke_model(
@@ -74,7 +80,8 @@ def chat():
         response_body = json.loads(response.get("body").read())
 
         if "anthropic" in model:
-            llm_response = response_body.get("completion", "Error: No completion found.")
+            # The response from the Messages API is in a 'content' block.
+            llm_response = response_body.get('content', [{}])[0].get('text', "Error: No text content found.")
         elif "amazon.titan" in model:
             llm_response = response_body.get("results")[0].get("outputText", "Error: No output text found.")
         else:
