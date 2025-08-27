@@ -26,8 +26,7 @@
         }
 
         #conversation-list {
-            width: 260px;
-            flex-shrink: 0;
+            width: 250px;
             background-color: var(--sidebar-bg-color);
             padding: 10px;
             overflow-y: auto;
@@ -97,9 +96,6 @@
         #chat-input-area {
             padding: 20px;
             border-top: 1px solid var(--border-color);
-            width: 100%;
-            max-width: 800px;
-            margin: 0 auto;
         }
         
         #chat-input {
@@ -108,6 +104,8 @@
             border-radius: 8px;
             padding: 5px;
             border: 1px solid var(--border-color);
+            max-width: 800px;
+            margin: 0 auto;
         }
 
         #message-input {
@@ -156,7 +154,7 @@
                     <option value="anthropic.claude-v2">Claude v2</option>
                     <option value="anthropic.claude-instant-v1">Claude Instant</option>
                     <option value="amazon.titan-text-express-v1">Titan Text</option>
-                    <option value="deepseek-coder">Deepseek Coder</option>
+                    <option value="deepseek.coder">DeepSeek Coder</option>
                 </select>
                 <button id="send-button">Send</button>
             </div>
@@ -231,16 +229,7 @@
             });
 
             const data = await response.json();
-            let assistantResponse;
-
-            if (model.startsWith('anthropic') || model.startsWith('amazon')) {
-                assistantResponse = data.messages[data.messages.length - 1].content;
-            } else if (data.choices && data.choices.length > 0) {
-                assistantResponse = data.choices[0].message.content;
-            } else {
-                assistantResponse = "Sorry, I couldn't process the response.";
-            }
-            
+            const assistantResponse = data.messages[data.messages.length - 1].content;
             thinkingMessage.innerText = assistantResponse;
 
             if (data.new_conversation) {

@@ -33,75 +33,69 @@ def chat():
         conversation_id = db.create_conversation(name=conversation_name, model=model)
         new_conversation_info = {"id": conversation_id, "name": conversation_name}
 
-    # Add user message to the database
     db.add_message(conversation_id, "user", message)
 
-    # --- AWS Bedrock Client Integration --- #
     llm_response = ""
     try:
-        # 1. Instantiate Bedrock client. Ensure your AWS credentials are configured.
         bedrock_runtime = boto3.client(service_name='bedrock-runtime')
-
-        # 2. Get conversation history and format it for the model.
-        # Note: Prompt formatting can be model-specific. This is a generic example.
         conversation_history = db.get_conversation(conversation_id)["messages"]
 
-        # 3. Prepare the payload based on the model provider.
+        # --- Prepare the payload based on the model provider ---
+        body = ""
         if "anthropic" in model:
-            # Newer Anthropic models (like Claude 3) require the Messages API format.
-            # The conversation history from the DB is already in the correct format.
             body = json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 500,
+                "max_tokens": 1024,
                 "messages": conversation_history
             })
-        else:
-            # Models like Titan use a text-based prompt format.
+        elif "deepseek" in model:
+            # DeepSeek uses a format similar to the standard chat messages API
+            body = json.dumps({
+                "messages": conversation_history,
+                "max_tokens": 1024
+            })
+        elif "amazon.titan" in model:
             prompt = ""
             for msg in conversation_history:
-                role = "Human" if msg['role'] == 'user' else "Assistant"
-                prompt += f"\n\n{role}: {msg['content']}"
-            prompt += "\n\nAssistant:"
+                role = "user" if msg['role'] == 'user' else "bot"
+                prompt += f"{role}: {msg['content']}\n"
+            prompt += "bot:"
+            body = json.dumps({
+                "inputText": prompt,
+                "textGenerationConfig": {"maxTokenCount": 1024}
+            })
+        else:
+            raise ValueError(f"Unsupported model provider for model ID: {model}")
 
-            if "amazon.titan" in model:
-                body = json.dumps({
-                    "inputText": prompt,
-                    "textGenerationConfig": {"maxTokenCount": 500}
-                })
-            else: # Fallback for other models, may need adjustment
-                body = json.dumps({"prompt": prompt})
-
-        # 4. Invoke the model
+        # --- Invoke the model ---
         response = bedrock_runtime.invoke_model(
             body=body, modelId=model, accept="application/json", contentType="application/json"
         )
-
-        # 5. Parse the response to extract only the text. This is the key fix.
         response_body = json.loads(response.get("body").read())
 
+        # --- Parse the response to extract the text ---
         if "anthropic" in model:
-            # The response from the Messages API is in a 'content' block.
-            llm_response = response_body.get('content', [{}])[0].get('text', "Error: No text content found.")
+            llm_response = response_body.get('content', [{}])[0].get('text', "Error: No text found")
+        elif "deepseek" in model:
+            llm_response = response_body.get('choices')[0].get('message').get('content')
         elif "amazon.titan" in model:
-            llm_response = response_body.get("results")[0].get("outputText", "Error: No output text found.")
+            llm_response = response_body.get("results")[0].get("outputText", "Error: No output text found")
         else:
-            llm_response = str(response_body)
+            llm_response = f"Error: Response parsing not implemented for this model."
 
     except Exception as e:
         llm_response = f"Error communicating with Bedrock: {e}"
-    # --- End of AWS Bedrock Client Integration --- #
 
-    # Add assistant message to the database
     db.add_message(conversation_id, "assistant", llm_response)
 
-    response = {
+    response_data = {
         "conversation_id": conversation_id,
         "messages": db.get_conversation(conversation_id)["messages"],
     }
     if new_conversation_info:
-        response["new_conversation"] = new_conversation_info
+        response_data["new_conversation"] = new_conversation_info
 
-    return jsonify(response)
+    return jsonify(response_data)
 
 if __name__ == "__main__":
     app.run(debug=True)
