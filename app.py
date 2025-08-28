@@ -15,7 +15,6 @@ db.init_db()
 def google_search(query):
     """Performs a Google search, then scrapes the content of the top 3 results."""
     try:
-        # Step 1: Get top 3 search results from Google
         api_key = os.environ.get("GOOGLE_API_KEY")
         search_engine_id = os.environ.get("GOOGLE_CX")
         if not api_key or not search_engine_id:
@@ -30,7 +29,6 @@ def google_search(query):
         if not search_results.get("items"):
             return "No relevant search results found."
 
-        # Step 2: Scrape content from each result
         all_scraped_content = []
         urls_to_scrape = [item["link"] for item in search_results["items"]]
 
@@ -97,13 +95,13 @@ def chat():
         for turn in range(max_turns):
             conversation_history = db.get_conversation(conversation_id)["messages"]
             
-            system_prompt = '''You are a helpful assistant. If you need to find out recent information or anything you don't know, you can use the google_search tool. To use it, you MUST respond with a JSON object containing 'tool_name': 'google_search' and 'query': 'your search query'. Do not add any other text. If you have enough information to answer, provide the answer directly.'''
+            system_prompt = '''You are a helpful assistant. If you need to find out recent information or anything you don't know, you can use the google_search tool. To use it, you MUST respond with ONLY a JSON object containing 'tool_name': 'google_search' and 'query': 'your search query'. Do not add any other text or explanation.'''
 
             body = ""
             if "anthropic" in model:
                 body = json.dumps({
                     "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 4096, # Increased token limit for more content
+                    "max_tokens": 4096,
                     "system": system_prompt,
                     "messages": conversation_history
                 })
@@ -121,18 +119,28 @@ def chat():
             else:
                 llm_response = response_body.get('completion', str(response_body))
 
+            # --- Robust Tool Use Check ---
             try:
-                tool_call = json.loads(llm_response)
-                if tool_call.get("tool_name") == "google_search":
-                    search_query = tool_call.get("query")
-                    search_results = google_search(search_query)
-                    db.add_message(conversation_id, "assistant", llm_response)
-                    db.add_message(conversation_id, "user", f"Search results for \"{search_query}\": {search_results}")
-                    continue
-                else:
-                    break
-            except (json.JSONDecodeError, AttributeError):
+                # Find the start and end of the JSON object in the response
+                start_index = llm_response.find('{')
+                end_index = llm_response.rfind('}') + 1
+                
+                if start_index != -1 and end_index != -1:
+                    json_str = llm_response[start_index:end_index]
+                    tool_call = json.loads(json_str)
+                    
+                    if tool_call.get("tool_name") == "google_search":
+                        search_query = tool_call.get("query")
+                        search_results = google_search(search_query)
+                        db.add_message(conversation_id, "assistant", llm_response) # Log the full model response
+                        db.add_message(conversation_id, "user", f"Search results for \"{search_query}\": {search_results}")
+                        continue # Continue to the next turn for final answer
+                
+                # If no valid tool call is found, break the loop
                 break
+
+            except (json.JSONDecodeError, AttributeError):
+                break # Not a valid JSON, so it's the final answer
 
     except Exception as e:
         llm_response = f"Error communicating with Bedrock: {e}"
