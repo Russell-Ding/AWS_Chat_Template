@@ -94,8 +94,30 @@
         }
 
         #chat-input-area {
-            padding: 20px;
+            padding: 10px 20px;
             border-top: 1px solid var(--border-color);
+        }
+
+        #file-uploads-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding-bottom: 10px;
+        }
+
+        .file-pill {
+            background-color: var(--sidebar-bg-color);
+            padding: 5px 10px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .remove-file-btn {
+            margin-left: 8px;
+            cursor: pointer;
+            font-weight: bold;
         }
         
         #chat-input {
@@ -123,14 +145,15 @@
             outline: none;
         }
 
-        #model-select, #send-button {
-            background-color: var(--sidebar-bg-color);
+        #attach-file-button, #model-select, #send-button {
+            background-color: transparent;
             color: var(--text-color);
-            border: 1px solid var(--border-color);
+            border: none;
             border-radius: 5px;
             padding: 0 10px;
             cursor: pointer;
             margin-left: 10px;
+            font-size: 18px;
         }
 
     </style>
@@ -148,7 +171,10 @@
     <div id="chat-window">
         <div id="chat-messages"></div>
         <div id="chat-input-area">
+            <div id="file-uploads-container"></div>
             <div id="chat-input">
+                <input type="file" id="file-input" style="display: none;">
+                <button id="attach-file-button">📎</button>
                 <textarea id="message-input" placeholder="Type your message..." rows="1"></textarea>
                 <select id="model-select">
                     <option value="anthropic.claude-v2">Claude v2</option>
@@ -163,18 +189,29 @@
 
     <script>
         let currentConversationId = null;
+        let attachedFiles = [];
         const messageInput = document.getElementById("message-input");
         const chatMessages = document.getElementById("chat-messages");
+        const fileInput = document.getElementById("file-input");
+        const fileUploadsContainer = document.getElementById("file-uploads-container");
 
-        // Auto-resize textarea
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
 
+        document.getElementById("attach-file-button").addEventListener("click", () => fileInput.click());
+        fileInput.addEventListener("change", (event) => uploadFile(event.target.files[0]));
+
+        function clearFileUploads() {
+            attachedFiles = [];
+            fileUploadsContainer.innerHTML = '';
+        }
+
         document.getElementById("new-conversation").addEventListener("click", () => {
             currentConversationId = null;
             chatMessages.innerHTML = "";
+            clearFileUploads();
         });
 
         document.getElementById("conversations").addEventListener("click", async (event) => {
@@ -191,6 +228,45 @@
             }
         });
 
+        function addFilePill(filename, filepath) {
+            const pill = document.createElement('div');
+            pill.className = 'file-pill';
+            pill.dataset.filepath = filepath;
+            pill.innerHTML = `<span>${filename}</span><span class="remove-file-btn">✖</span>`;
+            
+            pill.querySelector('.remove-file-btn').addEventListener('click', () => {
+                removeFile(filepath);
+                pill.remove();
+            });
+
+            fileUploadsContainer.appendChild(pill);
+        }
+
+        function removeFile(filepath) {
+            attachedFiles = attachedFiles.filter(f => f.filepath !== filepath);
+        }
+
+        async function uploadFile(file) {
+            if (!file) return;
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const response = await fetch("/upload", {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.filepath) {
+                    attachedFiles.push({ filename: file.name, filepath: data.filepath });
+                    addFilePill(file.name, data.filepath);
+                }
+            } catch (error) {
+                console.error("File upload failed:", error);
+            }
+            fileInput.value = ''; // Reset file input
+        }
+
         function appendMessage(role, content) {
             const messageElement = document.createElement("div");
             messageElement.classList.add("message", `${role}-message`);
@@ -203,6 +279,7 @@
         async function loadConversation(conversationId) {
             if (!conversationId) return;
             currentConversationId = conversationId;
+            clearFileUploads();
             const response = await fetch(`/conversation/${conversationId}`);
             const data = await response.json();
             chatMessages.innerHTML = "";
@@ -213,11 +290,13 @@
 
         async function sendMessage() {
             const message = messageInput.value.trim();
-            if (!message) return;
+            const files = attachedFiles.map(f => f.filepath);
+
+            if (!message && files.length === 0) return;
 
             const model = document.getElementById("model-select").value;
             messageInput.value = "";
-            messageInput.style.height = 'auto'; // Reset height
+            messageInput.style.height = 'auto';
 
             appendMessage("user", message);
             const thinkingMessage = appendMessage("assistant", "...");
@@ -225,7 +304,7 @@
             const response = await fetch("/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message, model, conversation_id: currentConversationId })
+                body: JSON.stringify({ message, model, conversation_id: currentConversationId, files })
             });
 
             const data = await response.json();

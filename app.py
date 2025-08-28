@@ -5,8 +5,14 @@ import json
 import os
 import requests
 from bs4 import BeautifulSoup
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+# --- File Upload Configuration ---
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Initialize the database
 db.init_db()
@@ -65,6 +71,19 @@ def index():
     conversations = db.get_conversations()
     return render_template("index.html", conversations=conversations)
 
+@app.route("/upload", methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        return jsonify({"filepath": filepath}), 200
+
 @app.route("/conversation/<int:conversation_id>")
 def get_conversation_route(conversation_id):
     conversation = db.get_conversation(conversation_id)
@@ -78,7 +97,11 @@ def chat():
     message = data.get("message")
     model = data.get("model")
     conversation_id = data.get("conversation_id")
+    files = data.get("files", []) # Get the list of attached files
     new_conversation_info = None
+
+    # TODO: Add logic to read file contents and add to the prompt
+    print("Attached files:", files)
 
     if not conversation_id:
         conversation_name = f"Conversation about {message[:20]}..."
@@ -119,11 +142,9 @@ def chat():
             else:
                 llm_response = response_body.get('completion', str(response_body))
 
-            # --- Robust Tool Use Check ---
             try:
-                # Find the start and end of the JSON object in the response
                 start_index = llm_response.find('{')
-                end_index = llm_response.rfind('}') + 1
+                end_index = ll.rfind('}') + 1
                 
                 if start_index != -1 and end_index != -1:
                     json_str = llm_response[start_index:end_index]
@@ -132,15 +153,14 @@ def chat():
                     if tool_call.get("tool_name") == "google_search":
                         search_query = tool_call.get("query")
                         search_results = google_search(search_query)
-                        db.add_message(conversation_id, "assistant", llm_response) # Log the full model response
+                        db.add_message(conversation_id, "assistant", llm_response)
                         db.add_message(conversation_id, "user", f"Search results for \"{search_query}\": {search_results}")
-                        continue # Continue to the next turn for final answer
+                        continue
                 
-                # If no valid tool call is found, break the loop
                 break
 
             except (json.JSONDecodeError, AttributeError):
-                break # Not a valid JSON, so it's the final answer
+                break
 
     except Exception as e:
         llm_response = f"Error communicating with Bedrock: {e}"
