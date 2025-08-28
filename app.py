@@ -4,49 +4,61 @@ import boto3
 import json
 import os
 import requests
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
 # Initialize the database
 db.init_db()
 
-# --- Tool Definition: Google Search (Live) ---
+# --- Tool Definition: Google Search and Multi-Scrape ---
 def google_search(query):
-    """Performs a real Google search using the Custom Search JSON API."""
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    search_engine_id = os.environ.get("GOOGLE_CX")
-
-    if not api_key or not search_engine_id:
-        return "Error: Google API credentials not configured."
-
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": api_key,
-        "cx": search_engine_id,
-        "q": query,
-        "num": 5 # Request top 5 results
-    }
-
+    """Performs a Google search, then scrapes the content of the top 3 results."""
     try:
-        response = requests.get(url, params=params)
-        response.raise_for_status() # Raise an exception for bad status codes
+        # Step 1: Get top 3 search results from Google
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        search_engine_id = os.environ.get("GOOGLE_CX")
+        if not api_key or not search_engine_id:
+            return "Error: Google API credentials not configured."
+
+        search_url = "https://www.googleapis.com/customsearch/v1"
+        params = {"key": api_key, "cx": search_engine_id, "q": query, "num": 3}
+        response = requests.get(search_url, params=params)
+        response.raise_for_status()
         search_results = response.json()
-        
-        snippets = []
-        if "items" in search_results:
-            for item in search_results["items"]:
-                title = item.get("title", "")
-                link = item.get("link", "")
-                snippet = item.get("snippet", "").replace("\n", " ")
-                snippets.append(f'Title: {title}\nLink: {link}\nSnippet: {snippet}')
-        
-        if not snippets:
+
+        if not search_results.get("items"):
             return "No relevant search results found."
 
-        return "\n\n".join(snippets)
+        # Step 2: Scrape content from each result
+        all_scraped_content = []
+        urls_to_scrape = [item["link"] for item in search_results["items"]]
+
+        for url in urls_to_scrape:
+            try:
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                scrape_response = requests.get(url, headers=headers, timeout=10)
+                scrape_response.raise_for_status()
+
+                soup = BeautifulSoup(scrape_response.text, 'html.parser')
+                paragraphs = soup.find_all('p')
+                scraped_text = '\n'.join([p.get_text() for p in paragraphs])
+
+                if scraped_text:
+                    all_scraped_content.append(f"--- Content from {url} ---\n{scraped_text}")
+                
+            except requests.exceptions.RequestException as e:
+                print(f"Could not scrape {url}: {e}")
+            except Exception as e:
+                print(f"An error occurred while scraping {url}: {e}")
+
+        if not all_scraped_content:
+            return "Could not extract meaningful content from any of the top search results."
+
+        return "\n\n--- END OF SOURCE ---\n\n".join(all_scraped_content)
 
     except requests.exceptions.RequestException as e:
-        return f"Error during search API call: {e}"
+        return f"Error during Google Search API call: {e}"
     except Exception as e:
         return f"An unexpected error occurred: {e}"
 
@@ -91,19 +103,13 @@ def chat():
             if "anthropic" in model:
                 body = json.dumps({
                     "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 1024,
+                    "max_tokens": 4096, # Increased token limit for more content
                     "system": system_prompt,
                     "messages": conversation_history
                 })
             else:
-                if turn > 0:
-                    system_prompt = "You are a helpful assistant."
-                prompt = f"{system_prompt}\n\n"
-                for msg in conversation_history:
-                    role = "Human" if msg['role'] == 'user' else "Assistant"
-                    prompt += f"{role}: {msg['content']}\n"
-                prompt += "Assistant:"
-                body = json.dumps({"prompt": prompt, "max_tokens": 1024})
+                prompt = "\n\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
+                body = json.dumps({"prompt": prompt, "max_tokens": 4096})
 
             response = bedrock_runtime.invoke_model(
                 body=body, modelId=model, accept="application/json", contentType="application/json"
