@@ -197,21 +197,6 @@ def chat():
                     "system": system_prompt,
                     "messages": formatted_history
                 })
-            elif "deepseek" in model:
-                messages = [{"role": "system", "content": system_prompt}]
-                for msg in formatted_history:
-                    text_content = ""
-                    if msg.get("content") and isinstance(msg["content"], list):
-                        text_parts = [p.get("text", "") for p in msg["content"] if p.get("type") == "text"]
-                        text_content = "\n".join(text_parts)
-                    
-                    if text_content:
-                        messages.append({"role": msg["role"], "content": text_content})
-                
-                body = json.dumps({
-                    "messages": messages,
-                    "max_tokens": 4096
-                })
             else:
                 prompt = "\n\n".join([f"{m['role']}: {m['content'][0]['text']}" for m in formatted_history])
                 body = json.dumps({"prompt": prompt, "max_tokens": 4096})
@@ -223,11 +208,6 @@ def chat():
 
             if "anthropic" in model:
                 llm_response = response_body.get('content', [{}])[0].get('text', "")
-            elif "deepseek" in model:
-                if 'choices' in response_body and response_body['choices']:
-                    llm_response = response_body['choices'][0].get('message', {}).get('content', str(response_body))
-                else:
-                    llm_response = str(response_body)
             else:
                 llm_response = response_body.get('completion', str(response_body))
 
