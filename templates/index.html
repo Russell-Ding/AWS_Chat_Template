@@ -18,8 +18,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: grid;
-            grid-template-columns: 250px 1fr;
+            display: flex;
             height: 100vh;
             margin: 0;
             background-color: var(--background-color);
@@ -27,6 +26,7 @@
         }
 
         #conversation-list {
+            width: 250px;
             background-color: var(--sidebar-bg-color);
             padding: 10px;
             overflow-y: auto;
@@ -59,10 +59,10 @@
         }
 
         #chat-window {
+            flex-grow: 1;
             display: flex;
             flex-direction: column;
             background-color: var(--background-color);
-            min-width: 0; /* Prevents overflow in grid/flex */
         }
 
         #chat-messages {
@@ -79,8 +79,7 @@
             margin-bottom: 10px;
             max-width: 80%;
             line-height: 1.5;
-            overflow-wrap: break-word; /* Modern property for word wrapping */
-            white-space: pre-wrap; /* Ensures whitespace is preserved and lines wrap */
+            word-wrap: break-word;
         }
 
         .user-message {
