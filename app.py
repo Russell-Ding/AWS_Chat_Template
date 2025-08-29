@@ -99,11 +99,20 @@ def chat():
 
             body = ""
             if "anthropic" in model:
+                # Format messages for Anthropic API
+                formatted_messages = []
+                for msg in conversation_history:
+                    if msg['content'] and msg['content'].strip():  # Ensure non-empty content
+                        formatted_messages.append({
+                            "role": msg['role'],
+                            "content": msg['content']
+                        })
+                
                 body = json.dumps({
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": 4096,
                     "system": system_prompt,
-                    "messages": conversation_history
+                    "messages": formatted_messages
                 })
             else:
                 prompt = "\n\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
