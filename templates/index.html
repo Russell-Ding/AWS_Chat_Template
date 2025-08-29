@@ -286,7 +286,23 @@
             const data = await response.json();
             chatMessages.innerHTML = "";
             if (data && data.messages) {
-                data.messages.forEach(msg => appendMessage(msg.role, msg.content));
+                data.messages.forEach(msg => {
+                    let content = msg.content;
+                    
+                    // Handle JSON content for user messages
+                    if (typeof content === 'string') {
+                        try {
+                            const parsed = JSON.parse(content);
+                            if (Array.isArray(parsed)) {
+                                content = parsed.map(p => p.text || '').join('');
+                            }
+                        } catch (e) {
+                            // If it's not JSON, use as-is
+                        }
+                    }
+                    
+                    appendMessage(msg.role, content);
+                });
             }
         }
 
@@ -310,7 +326,21 @@
             });
 
             const data = await response.json();
-            const assistantResponse = data.messages[data.messages.length - 1].content;
+            const lastMessage = data.messages[data.messages.length - 1];
+            let assistantResponse = lastMessage.content;
+            
+            // Handle JSON content (user messages) vs string content (assistant messages)
+            if (typeof assistantResponse === 'string') {
+                try {
+                    const parsed = JSON.parse(assistantResponse);
+                    if (Array.isArray(parsed)) {
+                        assistantResponse = parsed.map(p => p.text || '').join('');
+                    }
+                } catch (e) {
+                    // If it's not JSON, use as-is (this is the normal case for assistant responses)
+                }
+            }
+            
             thinkingMessage.innerText = assistantResponse;
 
             if (data.new_conversation) {
