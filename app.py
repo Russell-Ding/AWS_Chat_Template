@@ -158,7 +158,7 @@ def chat():
 
     for fpath in files:
         content, mime_type = read_file_content(fpath)
-        if mime_type and mime_type.startswith('image/'):
+        if mime_type.startswith('image/'):
             user_message_content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": mime_type, "data": content}
@@ -215,7 +215,7 @@ def chat():
                 start_index = llm_response.find('{')
                 end_index = llm_response.rfind('}') + 1
                 
-                if start_index != -1 and end_index > start_index:
+                if start_index != -1 and end_index != -1:
                     json_str = llm_response[start_index:end_index]
                     tool_call = json.loads(json_str)
                     
